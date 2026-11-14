@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cri-o/cri-o/internal/jailparam"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,6 @@ import (
 
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
-	"go.podman.io/storage"
-	"go.podman.io/storage/pkg/idtools"
 	"github.com/cri-o/cri-o/internal/annotations"
 	"github.com/cri-o/cri-o/internal/config/node"
 	"github.com/cri-o/cri-o/internal/config/nsmgr"
@@ -28,6 +27,8 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/opencontainers/runtime-tools/generate"
 	"github.com/sirupsen/logrus"
+	"go.podman.io/storage"
+	"go.podman.io/storage/pkg/idtools"
 	types "k8s.io/cri-api/pkg/apis/runtime/v1"
 	kubeletTypes "k8s.io/kubelet/pkg/types"
 )
@@ -372,6 +373,12 @@ func (s *Server) runPodSandbox(ctx context.Context, req *types.RunPodSandboxRequ
 	// set up namespaces
 	s.resourceStore.SetStageForResource(ctx, sboxName, "sandbox namespace creation")
 	nsCleanupFuncs, err := s.configureGeneratorForSandboxNamespaces(ctx, hostNetwork, hostIPC, hostPID, sandboxIDMappings, sysctls, sb, g)
+	// A privileged host-network pod may manage the host pf (allow.pf), like
+	// CAP_NET_ADMIN on Linux. The sandbox jail needs it too: a child jail
+	// cannot have permissions its parent lacks.
+	if jailparam.HostNetworkPFAllowed(hostNetwork, req.GetConfig().GetLinux().GetSecurityContext().GetPrivileged()) {
+		g.AddAnnotation(jailparam.AllowPFAnnotation, "true")
+	}
 	// We want to cleanup after ourselves if we are managing any namespaces and fail in this function.
 	// However, we don't immediately register this func with resourceCleaner because we need to pair the
 	// ns cleanup with networkStop. Otherwise, we could try to cleanup the namespace before the network stop runs,
