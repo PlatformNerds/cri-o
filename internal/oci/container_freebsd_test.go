@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFreeBSDPidStartTime(t *testing.T) {
@@ -36,6 +37,20 @@ func TestFreeBSDPidStartTime(t *testing.T) {
 	}
 	if startTimesMatch(bootRelativePrefix+"1,000000", again, pid) {
 		t.Errorf("a different start time matched")
+	}
+	// microsecond jitter (boot time moving while ntpd slews) still matches,
+	// 50 ms apart doesn't
+	d, err := parseBootRelative(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	near := fmt.Sprintf("%s%d,%06d", bootRelativePrefix, (d+3*time.Microsecond)/time.Second, ((d+3*time.Microsecond)%time.Second)/time.Microsecond)
+	far := fmt.Sprintf("%s%d,%06d", bootRelativePrefix, (d+50*time.Millisecond)/time.Second, ((d+50*time.Millisecond)%time.Second)/time.Microsecond)
+	if !startTimesMatch(near, st, pid) {
+		t.Errorf("%q and %q should match (3 us apart)", near, st)
+	}
+	if startTimesMatch(far, st, pid) {
+		t.Errorf("%q and %q should not match (50 ms apart)", far, st)
 	}
 	if startTimesMatch("1,0", again, pid) {
 		t.Errorf("a different legacy start time matched")

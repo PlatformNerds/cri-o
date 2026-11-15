@@ -9,6 +9,7 @@ import "C"
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -29,6 +30,12 @@ func getPidStartTime(pid int) (string, error) {
 	return getPidStatDataFromSysctl(pid)
 }
 
+// startTimeTolerance absorbs the jitter of boot-relative start times:
+// kern.boottime is derived from the current time and moves by microseconds
+// while ntpd slews the clock. A reused PID can't start within this of the
+// original process, which had to exit and the PID space wrap around first.
+const startTimeTolerance = 10 * time.Millisecond
+
 // startTimesMatch reports whether a process start time saved for a
 // container's PID matches the PID's current one (no PID reuse).
 func startTimesMatch(saved, current string, pid int) bool {
@@ -36,7 +43,13 @@ func startTimesMatch(saved, current string, pid int) bool {
 		return true
 	}
 	if strings.HasPrefix(saved, bootRelativePrefix) {
-		return false
+		s, err1 := parseBootRelative(saved)
+		c, err2 := parseBootRelative(current)
+		if err1 != nil || err2 != nil {
+			return false
+		}
+		d := s - c
+		return d > -startTimeTolerance && d < startTimeTolerance
 	}
 	// Saved by an older CRI-O as wall-clock time: compare like it did.
 	abs, _, err := kinfoStartTime(pid)
@@ -64,27 +77,29 @@ func getPidStatData(pid int) (string, string, error) { //nolint:gocritic // Igno
 // a reused one ("PID wrap may have occurred") and refused exec and other
 // operations on it. Linux uses the start time in ticks since boot, which
 // clock steps don't change; ki_start - kern.boottime is the equivalent.
+//
+// The result jitters by microseconds (kern.boottime moves while ntpd slews
+// the clock), so compare with startTimesMatch, not for equality.
 func getPidStatDataFromSysctl(pid int) (string, error) {
-	for range 3 {
-		before, err := unix.SysctlTimeval("kern.boottime")
-		if err != nil {
-			return "", err
-		}
-		start, _, err := kinfoStartTime(pid)
-		if err != nil {
-			return "", err
-		}
-		after, err := unix.SysctlTimeval("kern.boottime")
-		if err != nil {
-			return "", err
-		}
-		if before != after {
-			continue // the clock was stepped meanwhile
-		}
-		rel := unix.NsecToTimeval(start.Nano() - after.Nano())
-		return fmt.Sprintf("%s%d,%06d", bootRelativePrefix, rel.Sec, rel.Usec), nil
+	start, _, err := kinfoStartTime(pid)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("boot time kept changing while reading the start time of PID %d", pid)
+	boot, err := unix.SysctlTimeval("kern.boottime")
+	if err != nil {
+		return "", err
+	}
+	rel := unix.NsecToTimeval(start.Nano() - boot.Nano())
+	return fmt.Sprintf("%s%d,%06d", bootRelativePrefix, rel.Sec, rel.Usec), nil
+}
+
+// parseBootRelative parses a start time from getPidStatDataFromSysctl.
+func parseBootRelative(s string) (time.Duration, error) {
+	var sec, usec int64
+	if _, err := fmt.Sscanf(strings.TrimPrefix(s, bootRelativePrefix), "%d,%d", &sec, &usec); err != nil {
+		return 0, err
+	}
+	return time.Duration(sec)*time.Second + time.Duration(usec)*time.Microsecond, nil
 }
 
 // kinfoStartTime returns the process's ki_start (wall-clock) from kinfo_proc.
