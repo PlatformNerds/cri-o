@@ -49,6 +49,7 @@ func (ss *StatsServer) updateSandbox(sb *sandbox.Sandbox) *types.PodSandboxStats
 	if err := jail.PopulateSandboxStats(sb.ID(), sandboxStats); err != nil {
 		logrus.Errorf("Error getting sandbox stats %s: %v", sb.ID(), err)
 	}
+	addPodTmpfsMemory(sb, sandboxStats)
 
 	// Network metrics are collected at pod level only.
 	if slices.Contains(ss.Config().EnabledPodMetrics(), config.NetworkMetrics) {
