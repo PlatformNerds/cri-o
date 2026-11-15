@@ -323,10 +323,16 @@ func criCPUStats(cpuStats *stats.CpuStats, systemNano int64) *types.CpuUsage {
 	}
 }
 
+// criMemStats: Usage.Usage is the jail's racct memoryuse (resident memory),
+// which is also what the container's memory limit (rctl memoryuse:sigkill)
+// enforces, so it is the usage to compare limits with. The kubelet reads
+// UsageBytes, e.g. to refuse an in-place resize below current usage.
 func criMemStats(memStats *stats.MemoryStats, systemNano int64) *types.MemoryUsage {
 	return &types.MemoryUsage{
 		Timestamp:       systemNano,
 		WorkingSetBytes: &types.UInt64Value{Value: memStats.Usage.Usage},
+		UsageBytes:      &types.UInt64Value{Value: memStats.Usage.Usage},
+		RssBytes:        &types.UInt64Value{Value: memStats.Usage.Usage},
 	}
 }
 

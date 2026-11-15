@@ -133,8 +133,11 @@ func PopulateSandboxStats(jailName string, sandboxStats *types.PodSandboxStats) 
 		RssBytes:        &types.UInt64Value{Value: memory.RssBytes},
 		PageFaults:      &types.UInt64Value{},
 		MajorPageFaults: &types.UInt64Value{},
-		UsageBytes:      &types.UInt64Value{Value: memory.MaxUsage},
-		AvailableBytes:  &types.UInt64Value{},
+		// memoryuse (resident), not vmemoryuse: limits are enforced on
+		// resident memory, and virtual size (e.g. Go's heap arena
+		// reservation) would make every limit look exceeded.
+		UsageBytes:     &types.UInt64Value{Value: memory.WorkingSetBytes},
+		AvailableBytes: &types.UInt64Value{},
 	}
 	if val, ok := entries["maxproc"]; ok {
 		stats.Process = &types.ProcessUsage{
