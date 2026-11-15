@@ -25,5 +25,9 @@ func (s *Server) UpdatePodSandboxResources(ctx context.Context, req *types.Updat
 		return nil, err
 	}
 
+	if err := s.updatePodLevelLimits(ctx, sb, req.GetResources()); err != nil {
+		return nil, err
+	}
+
 	return &types.UpdatePodSandboxResourcesResponse{}, nil
 }
