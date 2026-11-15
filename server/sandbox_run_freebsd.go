@@ -416,6 +416,9 @@ func (s *Server) runPodSandbox(ctx context.Context, req *types.RunPodSandboxRequ
 
 	g.SetLinuxResourcesCPUShares(PodInfraCPUshares)
 
+	// Pod-level limits go on the infra container: its jail is the pod jail.
+	applyPodLevelLimits(ctx, g, resources, podLevelLimitsSupported())
+
 	// When infra-ctr-cpuset specified, set the infra container CPU set
 	if s.config.InfraCtrCPUSet != "" {
 		log.Debugf(ctx, "Set the infra container cpuset to %q", s.config.InfraCtrCPUSet)
