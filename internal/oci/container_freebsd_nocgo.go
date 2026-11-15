@@ -53,3 +53,9 @@ func getPidStatDataFromFile(file string) (string, error) {
 func (c *Container) SetRuntimeUser(spec *specs.Spec) {
 	// No-op.
 }
+
+// startTimesMatch reports whether a process start time saved for a
+// container's PID matches the PID's current one (no PID reuse).
+func startTimesMatch(saved, current string, _ int) bool {
+	return saved == current
+}
