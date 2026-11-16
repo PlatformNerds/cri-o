@@ -652,6 +652,28 @@ func (c *container) SpecSetupCapabilities(caps *types.Capability, defaultCaps ca
 		caps = &types.Capability{}
 	}
 
+	if !capabilitiesEnforced {
+		// Validate the names (a typo is still an error) but put nothing in
+		// the spec: the platform has no capabilities to set.
+		known, err := getOCICapabilitiesList()
+		if err != nil {
+			return fmt.Errorf("get OCI capabilities list: %w", err)
+		}
+		for _, cp := range append(caps.GetAddCapabilities(), caps.GetDropCapabilities()...) {
+			if strings.EqualFold(cp, "ALL") {
+				continue
+			}
+			name := strings.ToUpper(cp)
+			if !strings.HasPrefix(name, "CAP_") {
+				name = "CAP_" + name
+			}
+			if !inStringSlice(known, name) {
+				return fmt.Errorf("unknown capability %q", name)
+			}
+		}
+		return nil
+	}
+
 	toCAPPrefixed := func(capability string) string {
 		if !strings.HasPrefix(strings.ToLower(capability), "cap_") {
 			return "CAP_" + strings.ToUpper(capability)

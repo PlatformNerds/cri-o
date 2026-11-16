@@ -10,6 +10,11 @@ func (c *container) SelinuxLabel(sboxLabel string) ([]string, error) {
 	return []string{}, nil
 }
 
+// capabilitiesEnforced is false: jails have no capabilities, so none are put
+// in the OCI spec (the generator would reject them as unsupported by the
+// host).
+const capabilitiesEnforced = false
+
 // getOCICapabilitiesList returns the Linux capability names a pod may add or
 // drop. FreeBSD has no capabilities and jails don't enforce them: root in a
 // jail keeps root's (jail-restricted) privileges and other users have none.

@@ -41,6 +41,9 @@ func (c *container) SelinuxLabel(sboxLabel string) ([]string, error) {
 }
 
 // getOCICapabilitiesList returns a list of all available capabilities.
+// capabilitiesEnforced: Linux applies the capability sets in the spec.
+const capabilitiesEnforced = true
+
 func getOCICapabilitiesList() ([]string, error) {
 	caps := make([]string, 0, len(capability.ListKnown()))
 
