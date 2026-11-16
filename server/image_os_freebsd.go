@@ -52,8 +52,19 @@ func addImageOSMounts(specgen *generate.Generator, img *storage.ImageResult, con
 	for _, m := range containerConfig.GetMounts() {
 		have[filepath.Clean(m.GetContainerPath())] = true
 	}
-	for _, m := range specgen.Mounts() {
+	mounts := specgen.Mounts()
+	for i, m := range mounts {
 		have[filepath.Clean(m.Destination)] = true
+		// devfs has a /dev/shm directory (the tmpfs mount point below),
+		// but the jail's devfs ruleset hides it, and nothing can be created
+		// in devfs: unhide it, as podman does for Linux containers.
+		if filepath.Clean(m.Destination) == "/dev" && m.Type == "devfs" && !have["/dev/shm"] {
+			mounts[i].Options = append(mounts[i].Options, "rule=path shm unhide mode 1777")
+		}
+	}
+	specgen.ClearMounts()
+	for _, m := range mounts {
+		specgen.AddMount(m)
 	}
 	for _, m := range linuxImageMounts {
 		if !have[m.Destination] {

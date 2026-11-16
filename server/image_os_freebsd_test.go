@@ -38,6 +38,17 @@ func TestAddImageOSMounts(t *testing.T) {
 	if got["/proc"] != "linprocfs" || got["/sys"] != "linsysfs" || got["/dev/shm"] != "tmpfs" {
 		t.Errorf("Linux image mounts: %v", got)
 	}
+	// /dev/shm is a devfs directory hidden by the jail's ruleset: unhide it
+	g, err := generate.New("freebsd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.ClearMounts()
+	g.AddMount(rspec.Mount{Destination: "/dev", Type: "devfs", Source: "devfs", Options: []string{"ruleset=4"}})
+	addImageOSMounts(&g, linux, &types.ContainerConfig{})
+	if opts := g.Mounts()[0].Options; len(opts) != 2 || opts[1] != "rule=path shm unhide mode 1777" {
+		t.Errorf("devfs options: %v", opts)
+	}
 	// a /dev/shm the pod supplies (emptyDir) and an existing /proc win
 	got = mounts(linux, &types.ContainerConfig{Mounts: []*types.Mount{{ContainerPath: "/dev/shm"}}},
 		rspec.Mount{Destination: "/proc", Type: "procfs"})
