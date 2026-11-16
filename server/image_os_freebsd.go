@@ -3,6 +3,8 @@ package server
 import (
 	"path/filepath"
 
+	"golang.org/x/sys/unix"
+
 	rspec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
 	types "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -66,11 +68,30 @@ func addImageOSMounts(specgen *generate.Generator, img *storage.ImageResult, con
 	for _, m := range mounts {
 		specgen.AddMount(m)
 	}
+	addedSys := false
 	for _, m := range linuxImageMounts {
 		if !have[m.Destination] {
 			specgen.AddMount(m)
+			addedSys = addedSys || m.Destination == "/sys"
 		}
 	}
+	// A cgroup v2 view of the container's limits, so that Linux runtimes
+	// (JVM, Go, .NET, Node) size themselves to the pod and not to the host.
+	// Only on our /sys (it provides the mount point) and when the kernel
+	// has the file system.
+	if addedSys && !have["/sys/fs/cgroup"] && linuxCgroupfsSupported() {
+		specgen.AddMount(rspec.Mount{
+			Destination: "/sys/fs/cgroup", Type: "lincgroupfs", Source: "cgroup2",
+			Options: []string{"ro", "nodev", "nosuid", "noexec"},
+		})
+	}
+}
+
+// linuxCgroupfsSupported reports whether the kernel provides lincgroupfs
+// (kern.features.linux_cgroupfs, from the linsysfs module).
+func linuxCgroupfsSupported() bool {
+	v, err := unix.SysctlUint32("kern.features.linux_cgroupfs")
+	return err == nil && v == 1
 }
 
 var linuxImageMounts = []rspec.Mount{
