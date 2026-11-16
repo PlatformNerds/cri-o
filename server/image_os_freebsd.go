@@ -78,3 +78,7 @@ var linuxImageMounts = []rspec.Mount{
 	{Destination: "/sys", Type: "linsysfs", Source: "sysfs", Options: []string{"nodev"}},
 	{Destination: "/dev/shm", Type: "tmpfs", Source: "shm", Options: []string{"mode=1777"}},
 }
+
+// imageOSFallbacks: images of the Linux RuntimeClass are stored as Linux
+// instances; see imageStatusByName.
+func imageOSFallbacks() []string { return []string{"linux"} }

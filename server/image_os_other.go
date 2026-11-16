@@ -14,3 +14,6 @@ func (s *Server) imageOSForPod(_ *types.PodSandboxConfig) string { return "" }
 
 // addImageOSMounts: nothing to add for native images.
 func addImageOSMounts(_ *generate.Generator, _ *storage.ImageResult, _ *types.ContainerConfig) {}
+
+// imageOSFallbacks: images are always resolved for the host's OS.
+func imageOSFallbacks() []string { return nil }

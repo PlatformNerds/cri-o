@@ -72,7 +72,7 @@ func (s *Server) removeImage(ctx context.Context, imageRef string) (untagErr err
 	for _, name := range potentialMatches {
 		var status *storage.ImageResult
 
-		status, statusErr = s.ContainerServer.StorageImageServer().ImageStatusByName(s.config.SystemContext, name)
+		status, statusErr = s.imageStatusByName(name)
 		if statusErr != nil {
 			log.Warnf(ctx, "Error getting image status %s: %v", name, statusErr)
 

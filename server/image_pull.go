@@ -345,7 +345,7 @@ func (s *Server) pullImageCandidate(ctx context.Context, sourceCtx *imageTypes.S
 // store.
 func (s *Server) resolveImageRefToID(ctx context.Context, imageRef storage.RegistryImageReference) (string, error) {
 	// Try resolving as a regular container image first.
-	imageResult, err := s.ContainerServer.StorageImageServer().ImageStatusByName(s.config.SystemContext, imageRef)
+	imageResult, err := s.imageStatusByName(imageRef)
 	if err == nil {
 		return imageResult.ID.IDStringForOutOfProcessConsumptionOnly(), nil
 	}

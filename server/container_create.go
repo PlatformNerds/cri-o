@@ -1297,7 +1297,7 @@ func (s *Server) resolveAndVerifyContainerImage(ctx context.Context, ctr contain
 
 		var imgResultErr error
 		for _, name := range potentialMatches {
-			imgResult, imgResultErr = s.ContainerServer.StorageImageServer().ImageStatusByName(s.config.SystemContext, name)
+			imgResult, imgResultErr = s.imageStatusByName(name)
 			if imgResultErr == nil {
 				break
 			}

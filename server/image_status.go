@@ -126,7 +126,7 @@ func (s *Server) storageImageStatus(ctx context.Context, spec *types.ImageSpec) 
 	var lastErr error
 
 	for _, name := range potentialMatches {
-		status, err := s.ContainerServer.StorageImageServer().ImageStatusByName(s.config.SystemContext, name)
+		status, err := s.imageStatusByName(name)
 		if err != nil {
 			if errors.Is(err, istorage.ErrNoSuchImage) {
 				log.Debugf(ctx, "Can't find %s", name)
