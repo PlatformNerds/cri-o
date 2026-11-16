@@ -840,6 +840,8 @@ func (s *Server) createSandboxContainer(ctx context.Context, ctr container.Conta
 		return nil, err
 	}
 
+	addImageOSMounts(specgen, imgInfo.imgResult, containerConfig)
+
 	err = ctr.SpecAddAnnotations(ctx, sb, containerVolumes, mountPoint, stopSignal, imgInfo.imgResult, s.config.CgroupManager().IsSystemd(), seccompRef, runtimePath)
 	if err != nil {
 		return nil, err

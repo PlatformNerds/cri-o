@@ -110,6 +110,9 @@ type pullArguments struct {
 	sandboxCgroup string
 	credentials   imageTypes.DockerAuthConfig
 	namespace     string
+	// os, when set, is the operating system to pull the image for
+	// (imageOSForPod); otherwise the host's.
+	os string
 }
 
 // pullOperation is used to synchronize parallel pull operations via the

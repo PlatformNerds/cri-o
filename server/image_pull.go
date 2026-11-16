@@ -54,6 +54,8 @@ func (s *Server) PullImage(ctx context.Context, req *types.PullImageRequest) (*t
 		if sc.GetMetadata() != nil {
 			pullArgs.namespace = sc.GetMetadata().GetNamespace()
 		}
+
+		pullArgs.os = s.imageOSForPod(sc)
 	}
 
 	if req.GetAuth() != nil {
@@ -156,6 +158,10 @@ func (s *Server) pullImage(ctx context.Context, pullArgs *pullArguments) (string
 	}
 
 	sourceCtx.DockerLogMirrorChoice = true // Add info level log of the pull source
+	if pullArgs.os != "" {
+		sourceCtx.OSChoice = pullArgs.os
+		log.Infof(ctx, "Pulling image %s for OS %s", pullArgs.image, pullArgs.os)
+	}
 	if pullArgs.credentials.Username != "" {
 		sourceCtx.DockerAuthConfig = &pullArgs.credentials
 	}
