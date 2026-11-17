@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"golang.org/x/sys/unix"
@@ -103,3 +104,28 @@ var linuxImageMounts = []rspec.Mount{
 // imageOSFallbacks: images of the Linux RuntimeClass are stored as Linux
 // instances; see imageStatusByName.
 func imageOSFallbacks() []string { return []string{"linux"} }
+
+// checkImageOS refuses to create a container of a handler that declares an
+// image OS (ImageOSAnnotation) from an image of another OS. The kubelet asks
+// whether an image is present by name only, so when the local copy of a tag
+// is a FreeBSD image, a pod of the Linux handler would otherwise silently run
+// FreeBSD binaries (and the reverse).
+func (s *Server) checkImageOS(handler, userRequestedImage string, img *storage.ImageResult) error {
+	h, ok := s.config.Runtimes[handler]
+	if !ok || h == nil {
+		return nil
+	}
+
+	want := h.DefaultAnnotations[ImageOSAnnotation]
+	if want == "" || img == nil || img.OCIConfig == nil || img.OCIConfig.OS == "" {
+		return nil
+	}
+
+	if img.OCIConfig.OS != want {
+		return fmt.Errorf("image %q (%s) is a %s image, but runtime handler %q runs %s images; "+
+			"the local copy of this tag is for another OS, remove it or use a %s image",
+			userRequestedImage, img.ID, img.OCIConfig.OS, handler, want, want)
+	}
+
+	return nil
+}
