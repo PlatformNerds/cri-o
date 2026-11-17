@@ -7,6 +7,15 @@
 #
 # crio_enable="YES"
 #
+# crio_tmpfs_dirs: directories that hold per-boot runtime state. CRI-O (and
+#   the runtimes it drives) assume these are emptied by a reboot, as they are
+#   on Linux where /run is a tmpfs. On FreeBSD /var/run lives on the root
+#   filesystem and cleanvar only removes plain files, so stale sandbox and
+#   container state survives an unclean reboot. CRI-O then cannot tell that
+#   the containers are gone and spends seconds per container waiting for
+#   exit files that will never appear before it lets the kubelet connect.
+#   Each directory is mounted as a tmpfs at boot. Set to "" to disable.
+#
 
 . /etc/rc.subr
 
@@ -15,6 +24,7 @@ rcvar=crio_enable
 
 load_rc_config "$name"
 : ${crio_enable="NO"}
+: ${crio_tmpfs_dirs="/var/run/containers/storage /var/run/crio /var/run/ocijail"}
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
 
@@ -23,5 +33,35 @@ crio_command="/usr/local/bin/crio"
 pidfile="/var/run/$name.pid"
 command_args="-S -p ${pidfile} ${crio_command} --log /var/log/crio.log"
 procname="/usr/local/bin/crio"
+start_precmd="crio_prestart"
+
+crio_is_tmpfs()
+{
+	mount -p -t tmpfs | awk -v d="$1" '$2 == d { found = 1 } END { exit !found }'
+}
+
+crio_prestart()
+{
+	local d
+
+	for d in ${crio_tmpfs_dirs}; do
+		crio_is_tmpfs "$d" && continue
+		mkdir -p "$d"
+		# Only switch to tmpfs while nothing can be using the old
+		# state: at boot, or when the directory is already empty.
+		# Mounting over the state of running containers would orphan
+		# them; in that case keep going and switch on the next boot.
+		if [ "${rc_fast}" != "yes" ] && \
+		    [ -n "$(find -x "$d" -mindepth 1 -maxdepth 1 2>/dev/null | head -1)" ]; then
+			warn "$d is not a tmpfs and is in use; it will become one on the next boot"
+			continue
+		fi
+		# Stale state from before the reboot is useless; remove it
+		# rather than leaving it hidden under the mount.
+		find -x "$d" -mindepth 1 -delete 2>/dev/null
+		mount -t tmpfs -o mode=0755 tmpfs "$d" || \
+		    warn "failed to mount tmpfs on $d"
+	done
+}
 
 run_rc_command "$1"
