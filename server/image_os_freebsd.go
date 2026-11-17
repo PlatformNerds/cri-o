@@ -110,7 +110,7 @@ func imageOSFallbacks() []string { return []string{"linux"} }
 // whether an image is present by name only, so when the local copy of a tag
 // is a FreeBSD image, a pod of the Linux handler would otherwise silently run
 // FreeBSD binaries (and the reverse).
-func (s *Server) checkImageOS(handler, userRequestedImage string, img *storage.ImageResult) error {
+func (s *Server) checkImageOS(handler, imageName string, img *storage.ImageResult) error {
 	h, ok := s.config.Runtimes[handler]
 	if !ok || h == nil {
 		return nil
@@ -122,9 +122,9 @@ func (s *Server) checkImageOS(handler, userRequestedImage string, img *storage.I
 	}
 
 	if img.OCIConfig.OS != want {
-		return fmt.Errorf("image %q (%s) is a %s image, but runtime handler %q runs %s images; "+
+		return fmt.Errorf("image %q is a %s image, but runtime handler %q runs %s images; "+
 			"the local copy of this tag is for another OS, remove it or use a %s image",
-			userRequestedImage, img.ID, img.OCIConfig.OS, handler, want, want)
+			imageName, img.OCIConfig.OS, handler, want, want)
 	}
 
 	return nil

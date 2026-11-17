@@ -1324,7 +1324,12 @@ func (s *Server) resolveAndVerifyContainerImage(ctx context.Context, ctr contain
 		return nil, err
 	}
 
-	if err := s.checkImageOS(sb.RuntimeHandler(), userRequestedImage, imgResult); err != nil {
+	imageName := ctr.Config().GetImage().GetUserSpecifiedImage()
+	if imageName == "" {
+		imageName = userRequestedImage
+	}
+
+	if err := s.checkImageOS(sb.RuntimeHandler(), imageName, imgResult); err != nil {
 		return nil, err
 	}
 
