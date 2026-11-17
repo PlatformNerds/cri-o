@@ -1,8 +1,10 @@
 package container
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/moby/sys/capability"
 	"github.com/opencontainers/selinux/go-selinux"
 
 	"github.com/cri-o/cri-o/utils"
