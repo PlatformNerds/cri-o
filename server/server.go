@@ -502,7 +502,17 @@ func New(
 		return nil, fmt.Errorf("close stdin: %w", err)
 	}
 
-	deletedImages := s.restore(ctx)
+	restoreCtx := ctx
+	// A missing or stale version file means the node rebooted (it lives on
+	// a filesystem that does not survive one), so no container monitor is
+	// left to write exit files. Do not wait for them while restoring.
+	if rebooted, _ := version.ShouldCrioWipe(config.VersionFile); rebooted {
+		log.Infof(ctx, "Node reboot detected via %s: not waiting for exit files while restoring", config.VersionFile)
+
+		restoreCtx = oci.WithoutExitFileWait(ctx)
+	}
+
+	deletedImages := s.restore(restoreCtx)
 	s.wipeIfAppropriate(ctx, deletedImages)
 
 	var bindAddressStr string

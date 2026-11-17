@@ -1196,7 +1196,11 @@ func (r *runtimeOCI) UpdateContainerStatus(ctx context.Context, c *Container) er
 			// Wait for it to appear before defaulting to exit code 255.
 			// This prevents a race where fast-exiting containers
 			// get a spurious exit code 255.
-			waitErr := waitForExitFile(c)
+			var waitErr error
+			if !exitFileWaitSkipped(ctx) {
+				waitErr = waitForExitFile(c)
+			}
+
 			if waitErr != nil {
 				log.Errorf(ctx, "Failed to update container status from exit file for %s: %v", c.ID(), waitErr)
 				c.state.Finished = time.Now()
