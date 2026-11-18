@@ -334,12 +334,40 @@ func (s *Server) newPodNetwork(ctx context.Context, sb *sandbox.Sandbox) (ocicni
 		NetNS:     sb.NetNsPath(),
 		RuntimeConfig: map[string]ocicni.RuntimeConfig{
 			network: {
+				PortMappings:   s.cniPortMappings(sb),
 				Bandwidth:      bwConfig,
 				CgroupPath:     sb.CgroupParent(),
 				PodAnnotations: &podAnnotations,
 			},
 		},
 	}, nil
+}
+
+// cniPortMappings returns the sandbox's host ports for the CNI plugins when
+// CRI-O doesn't map them itself (disable_hostport_mapping, the default where
+// there is no iptables or nftables, e.g. FreeBSD), so that a portmap plugin
+// in the network configuration can.
+func (s *Server) cniPortMappings(sb *sandbox.Sandbox) []ocicni.PortMapping {
+	if !s.config.DisableHostPortMapping {
+		return nil
+	}
+
+	var mappings []ocicni.PortMapping
+
+	for _, pm := range sb.PortMappings() {
+		if pm.HostPort <= 0 {
+			continue
+		}
+
+		mappings = append(mappings, ocicni.PortMapping{
+			HostPort:      pm.HostPort,
+			ContainerPort: pm.ContainerPort,
+			Protocol:      strings.ToLower(string(pm.Protocol)),
+			HostIP:        pm.HostIP,
+		})
+	}
+
+	return mappings
 }
 
 // networkGC cleans up any resources concerned with stale pods (pods not
