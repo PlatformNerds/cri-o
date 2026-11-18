@@ -7,11 +7,13 @@ import (
 	"sort"
 	"strings"
 
+	securejoin "github.com/cyphar/filepath-securejoin"
 	rspec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/runtime-tools/generate"
 	"go.podman.io/storage/pkg/idtools"
 	"golang.org/x/net/context"
 	types "k8s.io/cri-api/pkg/apis/runtime/v1"
+	crierrors "k8s.io/cri-api/pkg/errors"
 
 	"github.com/cri-o/cri-o/internal/config/device"
 	ctrfactory "github.com/cri-o/cri-o/internal/factory/container"
@@ -103,7 +105,15 @@ func (s *Server) addOCIBindMounts(ctx context.Context, ctr ctrfactory.Container,
 		if dest == "" {
 			return nil, nil, nil, fmt.Errorf("mount.ContainerPath is empty")
 		}
-		// TODO: add support for image mounts here
+		if m.GetImage().GetImage() != "" {
+			volume, mount, err := s.mountImageVolume(ctx, m, ctr.SandboxConfig().GetMetadata().GetNamespace())
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("%w: %w", crierrors.ErrImageVolumeMountFailed, err)
+			}
+			volumes = append(volumes, *volume)
+			ociMounts = append(ociMounts, *mount)
+			continue
+		}
 		if m.HostPath == "" {
 			return nil, nil, nil, fmt.Errorf("mount.HostPath is empty")
 		}
@@ -185,6 +195,61 @@ func (s *Server) addOCIBindMounts(ctx context.Context, ctr ctrfactory.Container,
 	}
 
 	return volumes, ociMounts, nil, nil
+}
+
+// mountImageVolume mounts the image a Kubernetes image volume refers to
+// (read-only, from containers/storage) and returns the volume and a read-only
+// nullfs mount of it, or of its sub path, for the container's jail. Linux
+// uses an overlay with an empty upper directory to the same effect.
+func (s *Server) mountImageVolume(ctx context.Context, m *types.Mount, namespace string) (*oci.ContainerVolume, *rspec.Mount, error) {
+	ref := m.GetImage().GetImage()
+	status, err := s.storageImageStatus(ctx, &types.ImageSpec{Image: ref})
+	if err != nil {
+		return nil, nil, fmt.Errorf("get storage image status: %w", err)
+	}
+	if status == nil {
+		// The kubelet pulls the image first.
+		return nil, nil, fmt.Errorf("image %q does not exist locally", ref)
+	}
+	if err := s.verifyImageSignature(ctx, namespace, m.GetImage().GetUserSpecifiedImage(), status); err != nil {
+		return nil, nil, err
+	}
+	imageID := status.ID.IDStringForOutOfProcessConsumptionOnly()
+
+	mountPoint, err := s.ContainerServer.Store().MountImage(imageID, []string{"ro"}, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("mount storage: %w", err)
+	}
+	log.Infof(ctx, "Image %s mounted to: %s", ref, mountPoint)
+
+	src := mountPoint
+	if sub := m.GetImageSubPath(); sub != "" {
+		// The kubelet already rejects absolute paths and "..". Resolve
+		// symlinks inside the image, which is read-only.
+		src, err = securejoin.SecureJoin(mountPoint, sub)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve sub path %q: %w", sub, err)
+		}
+		if _, err := os.Stat(src); err != nil {
+			if os.IsNotExist(err) {
+				return nil, nil, fmt.Errorf("sub path %q does not exist in image volume %q", sub, ref)
+			}
+			return nil, nil, fmt.Errorf("stat sub path %q: %w", sub, err)
+		}
+	}
+
+	return &oci.ContainerVolume{
+		ContainerPath:     m.GetContainerPath(),
+		HostPath:          src,
+		Readonly:          true,
+		RecursiveReadOnly: m.GetRecursiveReadOnly(),
+		Propagation:       m.GetPropagation(),
+		Image:             &types.ImageSpec{Image: imageID},
+	}, &rspec.Mount{
+		Source:      src,
+		Destination: m.GetContainerPath(),
+		Options:     []string{"ro", "nosuid", "noexec"},
+	}, nil
 }
 
 func addShmMount(ctr ctrfactory.Container, sb *sandbox.Sandbox) {
