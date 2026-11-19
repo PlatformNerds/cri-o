@@ -192,6 +192,15 @@ func (s *Server) addOCIBindMounts(ctx context.Context, ctr ctrfactory.Container,
 			Destination: dest,
 			Options:     options,
 		})
+
+		// Linux binds host paths recursively; see hostSubmounts.
+		if fi, err := os.Stat(src); err == nil && fi.IsDir() {
+			subs := hostSubmounts(src, dest, m.Readonly, s.submountExcludes(), mountSet)
+			if len(subs) > 0 {
+				log.Debugf(ctx, "Host path %s: also mounting %d file systems below it", src, len(subs))
+			}
+			ociMounts = append(ociMounts, subs...)
+		}
 	}
 
 	return volumes, ociMounts, nil, nil
