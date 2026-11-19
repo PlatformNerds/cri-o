@@ -43,9 +43,17 @@ func (r *runtimeOCI) PortForwardContainer(ctx context.Context, c *Container, net
 	defer span.End()
 	defer stream.Close()
 
-	log.Infof(ctx, "Starting port forward for %s in jail %s", c.ID(), c.ID())
-
-	conn, err := dialInJail(ctx, c.ID(), port)
+	var conn net.Conn
+	var err error
+	if c.Spoofed() {
+		// No infra jail: a hostNetwork pod (drop_infra_ctr), whose
+		// network stack is the host's own.
+		log.Infof(ctx, "Starting port forward for %s on the host network", c.ID())
+		conn, err = dialLocalhost(port)
+	} else {
+		log.Infof(ctx, "Starting port forward for %s in jail %s", c.ID(), c.ID())
+		conn, err = dialInJail(ctx, c.ID(), port)
+	}
 	if err != nil {
 		return fmt.Errorf("port forward into jail %s: %w", c.ID(), err)
 	}
@@ -166,20 +174,9 @@ func portForwardChild() {
 		fail("jail_attach %s: %v", os.Args[1], e)
 	}
 
-	// localhost may mean IPv4 or IPv6 and the server may listen on only one:
-	// try both, one after the other (as Linux's dialer with FallbackDelay -1).
-	var conn net.Conn
-	var errs []error
-	for _, addr := range []string{"127.0.0.1", "::1"} {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort(addr, strconv.Itoa(port)), 10*time.Second)
-		if err == nil {
-			conn = c
-			break
-		}
-		errs = append(errs, err)
-	}
-	if conn == nil {
-		fail("failed to connect to localhost:%d inside jail %s: %v", port, os.Args[1], errors.Join(errs...))
+	conn, err := dialLocalhost(int32(port))
+	if err != nil {
+		fail("inside jail %s: %v", os.Args[1], err)
 	}
 	f, err := conn.(*net.TCPConn).File()
 	if err != nil {
@@ -189,6 +186,21 @@ func portForwardChild() {
 		fail("sending the socket: %v", err)
 	}
 	os.Exit(0)
+}
+
+// dialLocalhost connects to localhost:port. localhost may mean IPv4 or IPv6
+// and the server may listen on only one: try both, one after the other (as
+// Linux's dialer with FallbackDelay -1).
+func dialLocalhost(port int32) (net.Conn, error) {
+	var errs []error
+	for _, addr := range []string{"127.0.0.1", "::1"} {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(addr, strconv.Itoa(int(port))), 10*time.Second)
+		if err == nil {
+			return c, nil
+		}
+		errs = append(errs, err)
+	}
+	return nil, fmt.Errorf("failed to connect to localhost:%d: %w", port, errors.Join(errs...))
 }
 
 // jailID returns the jid of the jail with the given name, from jail_get(2).

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 
 	"go.podman.io/storage/pkg/pools"
 	types "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -56,7 +57,9 @@ func (s *StreamService) PortForward(ctx context.Context, podSandboxID string, po
 	}
 
 	netNsPath := sb.NetNsPath()
-	if netNsPath == "" {
+	// FreeBSD finds the pod's network stack through its infra jail, and a
+	// hostNetwork pod's is the host's: no path there.
+	if netNsPath == "" && runtime.GOOS != "freebsd" {
 		return fmt.Errorf(
 			"network namespace path of sandbox %s is empty", sb.ID(),
 		)
