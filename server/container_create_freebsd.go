@@ -330,5 +330,44 @@ func (s *Server) specSetDevices(ctr ctrfactory.Container, sb *sandbox.Sandbox) e
 		return err
 	}
 
-	return ctr.SpecAddDevices(configuredDevices, annotationDevices, privilegedWithoutHostDevices, s.config.DeviceOwnershipFromSecurityContext)
+	if err := ctr.SpecAddDevices(configuredDevices, annotationDevices, privilegedWithoutHostDevices, s.config.DeviceOwnershipFromSecurityContext); err != nil {
+		return err
+	}
+	// CAP_NET_RAW on Linux lets a process read packets (AF_PACKET), as tools
+	// like tcpdump and arping need. The jail equivalent is the bpf device,
+	// which the default devfs ruleset hides; a vnet jail's bpf only sees the
+	// pod's own interfaces. Raw IP sockets are already allowed for all pods
+	// (allow.raw_sockets), as Linux's default capabilities don't allow them.
+	if !ctr.Privileged() && netRawCapability(ctr.Config().GetLinux().GetSecurityContext().GetCapabilities(), s.config.DefaultCapabilities) {
+		for i, m := range ctr.Spec().Config.Mounts {
+			if m.Type == "devfs" && filepath.Clean(m.Destination) == "/dev" {
+				ctr.Spec().Config.Mounts[i].Options = append(m.Options, "rule=path bpf* unhide")
+			}
+		}
+	}
+	return nil
+}
+
+// netRawCapability reports whether the container ends up with CAP_NET_RAW,
+// the way SpecSetupCapabilities computes it: the defaults, plus the
+// capabilities the container adds, minus those it drops.
+func netRawCapability(caps *types.Capability, defaults []string) bool {
+	has := func(list []string, name string) bool {
+		for _, c := range list {
+			if strings.EqualFold(strings.TrimPrefix(strings.ToUpper(c), "CAP_"), name) {
+				return true
+			}
+		}
+		return false
+	}
+	if has(caps.GetDropCapabilities(), "NET_RAW") {
+		return false
+	}
+	if has(caps.GetAddCapabilities(), "NET_RAW") || has(caps.GetAddCapabilities(), "ALL") {
+		return true
+	}
+	if has(caps.GetDropCapabilities(), "ALL") {
+		return false
+	}
+	return has(defaults, "NET_RAW")
 }
