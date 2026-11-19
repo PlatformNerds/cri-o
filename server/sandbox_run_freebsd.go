@@ -379,6 +379,11 @@ func (s *Server) runPodSandbox(ctx context.Context, req *types.RunPodSandboxRequ
 	if jailparam.HostNetworkPFAllowed(hostNetwork, req.GetConfig().GetLinux().GetSecurityContext().GetPrivileged()) {
 		g.AddAnnotation(jailparam.AllowPFAnnotation, "true")
 	}
+	// A privileged pod with its own network may run an NFS server in a
+	// privileged container (allow.nfsd); the sandbox jail needs it too.
+	if jailparam.PodNFSDAllowed(hostNetwork, req.GetConfig().GetLinux().GetSecurityContext().GetPrivileged()) {
+		g.AddAnnotation(jailparam.AllowNFSDAnnotation, "true")
+	}
 	// We want to cleanup after ourselves if we are managing any namespaces and fail in this function.
 	// However, we don't immediately register this func with resourceCleaner because we need to pair the
 	// ns cleanup with networkStop. Otherwise, we could try to cleanup the namespace before the network stop runs,

@@ -25,6 +25,11 @@ func (c *container) SpecAddNamespaces(sb SandboxIFace, targetCtr *oci.Container,
 	if jailparam.HostNetworkPFAllowed(hostNetwork, c.Privileged()) {
 		c.Spec().AddAnnotation(jailparam.AllowPFAnnotation, "true")
 	}
+	// Privileged containers of a pod with its own network may serve NFS;
+	// the sandbox jail got the same permission.
+	if jailparam.PodNFSDAllowed(hostNetwork, c.Privileged()) {
+		c.Spec().AddAnnotation(jailparam.AllowNFSDAnnotation, "true")
+	}
 
 	return nil
 }
