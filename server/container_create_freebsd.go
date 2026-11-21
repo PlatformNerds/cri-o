@@ -16,6 +16,7 @@ import (
 	crierrors "k8s.io/cri-api/pkg/errors"
 
 	"github.com/cri-o/cri-o/internal/config/device"
+	"github.com/cri-o/cri-o/internal/jailparam"
 	ctrfactory "github.com/cri-o/cri-o/internal/factory/container"
 	"github.com/cri-o/cri-o/internal/lib/sandbox"
 	"github.com/cri-o/cri-o/internal/log"
@@ -347,20 +348,26 @@ func (s *Server) specSetDevices(ctr ctrfactory.Container, sb *sandbox.Sandbox) e
 	// which the default devfs ruleset hides; a vnet jail's bpf only sees the
 	// pod's own interfaces. Raw IP sockets are already allowed for all pods
 	// (allow.raw_sockets), as Linux's default capabilities don't allow them.
-	if !ctr.Privileged() && netRawCapability(ctr.Config().GetLinux().GetSecurityContext().GetCapabilities(), s.config.DefaultCapabilities) {
+	caps := ctr.Config().GetLinux().GetSecurityContext().GetCapabilities()
+	if !ctr.Privileged() && hasCapability(caps, s.config.DefaultCapabilities, "NET_RAW") {
 		for i, m := range ctr.Spec().Config.Mounts {
 			if m.Type == "devfs" && filepath.Clean(m.Destination) == "/dev" {
 				ctr.Spec().Config.Mounts[i].Options = append(m.Options, "rule=path bpf* unhide")
 			}
 		}
 	}
+	// CAP_MKNOD lets a Linux container create device nodes; allow.mknod
+	// lets a jail create them outside devfs, where they are inert.
+	if jailparam.MknodAllowed(ctr.Privileged(), hasCapability(caps, s.config.DefaultCapabilities, "MKNOD")) {
+		ctr.Spec().AddAnnotation(jailparam.AllowMknodAnnotation, "true")
+	}
 	return nil
 }
 
-// netRawCapability reports whether the container ends up with CAP_NET_RAW,
-// the way SpecSetupCapabilities computes it: the defaults, plus the
-// capabilities the container adds, minus those it drops.
-func netRawCapability(caps *types.Capability, defaults []string) bool {
+// hasCapability reports whether the container ends up with the capability
+// name (e.g. "NET_RAW"), the way SpecSetupCapabilities computes it: the
+// defaults, plus the capabilities the container adds, minus those it drops.
+func hasCapability(caps *types.Capability, defaults []string, name string) bool {
 	has := func(list []string, name string) bool {
 		for _, c := range list {
 			if strings.EqualFold(strings.TrimPrefix(strings.ToUpper(c), "CAP_"), name) {
@@ -369,14 +376,14 @@ func netRawCapability(caps *types.Capability, defaults []string) bool {
 		}
 		return false
 	}
-	if has(caps.GetDropCapabilities(), "NET_RAW") {
+	if has(caps.GetDropCapabilities(), name) {
 		return false
 	}
-	if has(caps.GetAddCapabilities(), "NET_RAW") || has(caps.GetAddCapabilities(), "ALL") {
+	if has(caps.GetAddCapabilities(), name) || has(caps.GetAddCapabilities(), "ALL") {
 		return true
 	}
 	if has(caps.GetDropCapabilities(), "ALL") {
 		return false
 	}
-	return has(defaults, "NET_RAW")
+	return has(defaults, name)
 }

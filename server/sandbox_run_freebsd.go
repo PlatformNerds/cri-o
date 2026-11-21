@@ -384,9 +384,9 @@ func (s *Server) runPodSandbox(ctx context.Context, req *types.RunPodSandboxRequ
 	if jailparam.PodNFSDAllowed(hostNetwork, req.GetConfig().GetLinux().GetSecurityContext().GetPrivileged()) {
 		g.AddAnnotation(jailparam.AllowNFSDAnnotation, "true")
 	}
-	// A privileged pod may create device nodes outside devfs (allow.mknod),
-	// like CAP_MKNOD on Linux; the sandbox jail needs it too.
-	if jailparam.MknodAllowed(req.GetConfig().GetLinux().GetSecurityContext().GetPrivileged()) {
+	// Containers with CAP_MKNOD may create device nodes outside devfs
+	// (allow.mknod); the sandbox jail needs the permission for them to have it.
+	if jailparam.SandboxMknodAllowed() {
 		g.AddAnnotation(jailparam.AllowMknodAnnotation, "true")
 	}
 	// We want to cleanup after ourselves if we are managing any namespaces and fail in this function.

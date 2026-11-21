@@ -30,11 +30,6 @@ func (c *container) SpecAddNamespaces(sb SandboxIFace, targetCtr *oci.Container,
 	if jailparam.PodNFSDAllowed(hostNetwork, c.Privileged()) {
 		c.Spec().AddAnnotation(jailparam.AllowNFSDAnnotation, "true")
 	}
-	// Privileged containers may create device nodes outside devfs; the
-	// sandbox jail got the same permission.
-	if jailparam.MknodAllowed(c.Privileged()) {
-		c.Spec().AddAnnotation(jailparam.AllowMknodAnnotation, "true")
-	}
 
 	return nil
 }

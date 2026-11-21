@@ -43,10 +43,19 @@ func PodNFSDAllowed(hostNetwork, privileged bool) bool {
 // the jail may create device nodes outside devfs (freebsd-src patch 0043).
 const AllowMknodAnnotation = "org.freebsd.jail.allow.mknod"
 
-// MknodAllowed reports whether a privileged jail should get allow.mknod, as a
-// privileged Linux container has CAP_MKNOD (e.g. tools that prepare device
-// nodes in a volume). It grants no device access: on FreeBSD a device is
-// reached only through devfs, where a jail can't create nodes.
-func MknodAllowed(privileged bool) bool {
-	return privileged && Supported("allow.mknod")
+// MknodAllowed reports whether a container jail should get allow.mknod: the
+// container is privileged or has CAP_MKNOD, which lets a Linux container
+// create device nodes (e.g. tools that prepare device nodes in a volume). It
+// grants no device access: on FreeBSD a device is reached only through
+// devfs, where a jail can't create nodes.
+func MknodAllowed(privileged, capMknod bool) bool {
+	return (privileged || capMknod) && Supported("allow.mknod")
+}
+
+// SandboxMknodAllowed reports whether a pod's sandbox jail should get
+// allow.mknod. A child jail can't have a permission its parent lacks, and
+// which containers will have CAP_MKNOD isn't known yet; the sandbox jail
+// only runs the pause process.
+func SandboxMknodAllowed() bool {
+	return Supported("allow.mknod")
 }
