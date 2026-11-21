@@ -11,19 +11,16 @@ import (
 )
 
 func (c *container) SpecAddDevices(configuredDevices, annotationDevices []devicecfg.Device, privilegedWithoutHostDevices, enableDeviceOwnershipFromSecurityContext bool) error {
-	// TODO: implement internal/config/device for FreeBSD and add code here to modify the devfs mount accordingly.
-
-	// After that, add additional_devices from config
-	//for i := range configuredDevices {
-	//	d := &configuredDevices[i]
-	//	c.specAddDevice(d.Device)
-	//}
-
-	// Next, verify and add the devices from annotations
-	//for i := range annotationDevices {
-	//	d := &annotationDevices[i]
-	//	c.specAddDevice(d.Device)
-	//}
+	// additional_devices from the config, then the devices of the
+	// io.kubernetes.cri-o.Devices annotation: unhide them in the
+	// container's devfs (parsed and checked in internal/config/device).
+	for _, devs := range [][]devicecfg.Device{configuredDevices, annotationDevices} {
+		for i := range devs {
+			if err := devfs.AddRules(c.Spec().Config.Mounts, devs[i].Rules); err != nil {
+				return fmt.Errorf("device %s: %w", devs[i].HostPath, err)
+			}
+		}
+	}
 
 	// Then, add host devices if privileged
 	if err := c.specAddHostDevicesIfPrivileged(privilegedWithoutHostDevices); err != nil {
