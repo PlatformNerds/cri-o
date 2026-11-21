@@ -15,7 +15,10 @@
 //   - the root of the host's devfs (hostPath /dev) at another path, such as
 //     /host/dev, becomes a second devfs mount with the ruleset and rules of
 //     the container's /dev, so it shows what /dev shows;
-//   - anything else is an error: devfs can't show a device under another name.
+//   - a device at another path (a block volume's devicePath) is unhidden at
+//     its own name, and the path becomes a symbolic link to it;
+//   - a directory at another path is an error: devfs can't show it under
+//     another name.
 //
 // Rules applied with "devfs rule apply" cover the devices that exist when the
 // container starts. A device created later (a driver loaded afterwards) stays
@@ -29,6 +32,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	securejoin "github.com/cyphar/filepath-securejoin"
 	rspec "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 )
@@ -77,6 +81,11 @@ type Translation struct {
 	// destination isn't /dev: mount another devfs there, with the options of
 	// the container's /dev (see SyncMounts).
 	Mount bool
+	// Link is set when a device is wanted at another path (a block volume's
+	// devicePath, e.g. /mnt/volume1): the destination becomes a symbolic link
+	// to Link, the device in the container's devfs. Open, read, write and
+	// ioctl behave as on the device; lstat(2) shows the link.
+	Link string
 }
 
 // Translate maps src, a host path on devfs, to destination in the container.
@@ -89,14 +98,21 @@ func Translate(src *Source, hostPath, destination string) (*Translation, error) 
 		return &Translation{Mount: true}, nil
 	}
 	want := filepath.Join(ContainerDev, src.Rel)
-	if destination != want {
-		return nil, fmt.Errorf("%s is a device on the host's devfs; on FreeBSD a container can only get it at %s, not %s", hostPath, want, destination)
+	if destination != want && (src.Dir || destination == ContainerDev || strings.HasPrefix(destination, ContainerDev+"/")) {
+		// A link below /dev would be hidden by the container's devfs.
+		return nil, fmt.Errorf("%s is on the host's devfs; on FreeBSD a container can only get it at %s, not %s", hostPath, want, destination)
 	}
 	rules, err := UnhideRules(src.Rel, src.Dir)
 	if err != nil {
 		return nil, err
 	}
-	return &Translation{Rules: rules}, nil
+	t := &Translation{Rules: rules}
+	if destination != want {
+		// devfs can't show the device under another name: unhide it at its
+		// own name and link the destination to it (see Link).
+		t.Link = want
+	}
+	return t, nil
 }
 
 // UnhideRules returns the devfs rules that unhide rel (relative to the
@@ -167,4 +183,42 @@ func SyncMounts(mounts []rspec.Mount) {
 			}
 		}
 	}
+}
+
+// CreateLink makes the symbolic link at destination (a path in the
+// container) to target, in the container's root file system at rootfs. An
+// existing link is replaced; anything else at destination is an error.
+func CreateLink(rootfs, destination, target string) error {
+	parent, err := securejoin.SecureJoin(rootfs, filepath.Dir(destination))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	link := filepath.Join(parent, filepath.Base(destination))
+	if fi, err := os.Lstat(link); err == nil {
+		if fi.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("cannot link device %s to %s: something else is there", target, destination)
+		}
+		if err := os.Remove(link); err != nil {
+			return err
+		}
+	}
+	return os.Symlink(target, link)
+}
+
+// TranslateHostPath resolves hostPath (the kubelet hands block volumes over
+// as a link to the device) and translates it for destination. It returns nil
+// when hostPath isn't on a devfs.
+func TranslateHostPath(hostPath, destination string) (*Translation, error) {
+	resolved, err := filepath.EvalSymlinks(hostPath)
+	if err != nil {
+		return nil, nil
+	}
+	src, err := HostSource(resolved)
+	if err != nil || src == nil {
+		return nil, err
+	}
+	return Translate(src, hostPath, destination)
 }

@@ -90,6 +90,9 @@ func devicesFromStrings(devs []string, allowedDevices map[string]struct{}) ([]De
 		if err != nil {
 			return nil, err
 		}
+		if t.Link != "" {
+			return nil, fmt.Errorf("%s: on FreeBSD a configured device keeps its own path (%s), not %s", src, t.Link, dst)
+		}
 		res = append(res, Device{HostPath: src, ContainerPath: dst, Rules: t.Rules})
 	}
 	return res, nil

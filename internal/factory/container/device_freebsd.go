@@ -52,25 +52,22 @@ func (c *container) specAddHostDevicesIfPrivileged(privilegedWithoutHostDevices 
 	return nil
 }
 
-// specAddContainerConfigDevices unhides the CRI devices (from device
-// plugins, for example) in the container's devfs. devfs can't show a device
-// under another name, so the container path must be the device's own path.
-// Privileged containers already see every device.
+// specAddContainerConfigDevices unhides the CRI devices (device plugins,
+// block volumes) in the container's devfs. A device wanted at another path
+// (a block volume's devicePath) also gets a link there, made once the root
+// file system is mounted (see devfs.Translation.Link). Privileged containers
+// see every device already.
 func (c *container) specAddContainerConfigDevices(enableDeviceOwnershipFromSecurityContext bool) error {
-	if c.Privileged() {
-		return nil
-	}
 	for _, d := range c.Config().GetDevices() {
-		src, err := devfs.HostSource(d.GetHostPath())
+		t, err := devfs.TranslateHostPath(d.GetHostPath(), d.GetContainerPath())
 		if err != nil {
 			return fmt.Errorf("device %s: %w", d.GetHostPath(), err)
 		}
-		if src == nil || src.Rel == "." {
+		if t == nil || t.Mount {
 			return fmt.Errorf("device %s: not a device on the host's devfs", d.GetHostPath())
 		}
-		t, err := devfs.Translate(src, d.GetHostPath(), d.GetContainerPath())
-		if err != nil {
-			return err
+		if c.Privileged() {
+			continue
 		}
 		if err := devfs.AddRules(c.Spec().Config.Mounts, t.Rules); err != nil {
 			return fmt.Errorf("device %s: %w", d.GetHostPath(), err)

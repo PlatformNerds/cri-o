@@ -1,6 +1,8 @@
 package devfs
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -23,7 +25,9 @@ func TestTranslate(t *testing.T) {
 		{Source{"dri", true}, "/dev/dri", &Translation{Rules: []string{
 			"rule=path dri unhide", "rule=path dri/* unhide", "rule=path dri/*/* unhide", "rule=path dri/*/*/* unhide"}}, false},
 		{Source{"klog", false}, "/dev/kmsg", nil, true},
-		{Source{"fuse", false}, "/host/dev/fuse", nil, true},
+		{Source{"klog", false}, "/var/kmsg", &Translation{Rules: []string{"rule=path klog unhide"}, Link: "/dev/klog"}, false},
+		{Source{"md0", false}, "/mnt/volume1", &Translation{Rules: []string{"rule=path md0 unhide"}, Link: "/dev/md0"}, false},
+		{Source{"dri", true}, "/host/dri", nil, true},
 		{Source{"a b", false}, "/dev/a b", nil, true},
 		{Source{"x*", false}, "/dev/x*", nil, true},
 	} {
@@ -80,5 +84,35 @@ func TestAddRulesAndSync(t *testing.T) {
 	}
 	if err := AddRules([]rspec.Mount{{Destination: "/dev", Type: "nullfs"}}, []string{"r"}); err == nil {
 		t.Error("AddRules without a devfs /dev: no error")
+	}
+}
+
+func TestCreateLink(t *testing.T) {
+	root := t.TempDir()
+	if err := CreateLink(root, "/mnt/volume1", "/dev/md0"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.Readlink(filepath.Join(root, "mnt/volume1")); err != nil || got != "/dev/md0" {
+		t.Errorf("got %q, %v", got, err)
+	}
+	// Again (a restarted container): the link is replaced.
+	if err := CreateLink(root, "/mnt/volume1", "/dev/md1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateLink(root, "/data", "/dev/md0"); err == nil {
+		t.Error("replaced a directory")
+	}
+	// A symlink in the image must not lead outside the root.
+	if err := os.Symlink("/", filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateLink(root, "/escape/x", "/dev/md0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "x")); err != nil {
+		t.Errorf("link not inside the root: %v", err)
 	}
 }

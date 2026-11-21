@@ -155,6 +155,7 @@ func (s *Server) addOCIBindMounts(ctx context.Context, ctr ctrfactory.Container,
 			if t.Mount {
 				specgen.AddMount(devfs.NewMount(dest))
 			}
+			// t.Link: createDeviceLinks makes the link.
 			log.Infof(ctx, "Host path %s is on devfs: %d devfs rules, devfs mount: %v", m.HostPath, len(t.Rules), t.Mount)
 			volumes = append(volumes, oci.ContainerVolume{
 				ContainerPath: dest,

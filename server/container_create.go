@@ -737,6 +737,10 @@ func (s *Server) createSandboxContainer(ctx context.Context, ctr container.Conta
 		}
 	}()
 
+	if err := s.createDeviceLinks(ctx, ctr, mountPoint); err != nil {
+		return nil, err
+	}
+
 	s.resourceStore.SetStageForResource(ctx, ctr.Name(), "container spec configuration")
 
 	labels := containerConfig.GetLabels()
