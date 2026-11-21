@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -46,14 +49,24 @@ func (s *Server) imageOSForPod(sc *types.PodSandboxConfig) string {
 
 // addImageOSMounts gives containers of Linux images the Linux views of /proc
 // and /sys and a /dev/shm, as podman does for Linux containers on FreeBSD.
+// Containers of FreeBSD images get the Linux /proc (see freeBSDImageProc).
 // Mounts the pod supplies itself win.
 func addImageOSMounts(specgen *generate.Generator, img *storage.ImageResult, containerConfig *types.ContainerConfig) {
-	if img == nil || img.OCIConfig == nil || img.OCIConfig.OS != "linux" {
+	if img == nil || img.OCIConfig == nil {
 		return
 	}
 	have := map[string]bool{}
 	for _, m := range containerConfig.GetMounts() {
 		have[filepath.Clean(m.GetContainerPath())] = true
+	}
+	if img.OCIConfig.OS != "linux" {
+		for _, m := range specgen.Mounts() {
+			have[filepath.Clean(m.Destination)] = true
+		}
+		if !have["/proc"] && linprocfsAvailable() {
+			specgen.AddMount(freeBSDImageProc)
+		}
+		return
 	}
 	mounts := specgen.Mounts()
 	for i, m := range mounts {
@@ -86,6 +99,35 @@ func addImageOSMounts(specgen *generate.Generator, img *storage.ImageResult, con
 			Options: []string{"ro", "nodev", "nosuid", "noexec"},
 		})
 	}
+}
+
+// freeBSDImageProc is the /proc of containers of FreeBSD images: Linux's
+// (linprocfs). A FreeBSD jail has no /proc of its own, and Kubernetes
+// workloads and their tests read Linux's: /proc/mounts and mountinfo, for
+// one, describe a container's volumes by the filesystem behind them, as on
+// Linux, where FreeBSD's mount(8) shows them as nullfs mounts of host paths.
+// FreeBSD's own tools (ps, procstat) don't use /proc.
+var freeBSDImageProc = rspec.Mount{
+	Destination: "/proc", Type: "linprocfs", Source: "proc", Options: []string{"nodev"},
+}
+
+// linprocfsAvailable reports whether linprocfs is in the kernel or can be
+// loaded (mounting it loads the module).
+func linprocfsAvailable() bool {
+	if conf, err := unix.SysctlRaw("vfs.conflist"); err == nil &&
+		bytes.Contains(conf, []byte("linprocfs\x00")) {
+		return true
+	}
+	path, err := unix.Sysctl("kern.module_path")
+	if err != nil {
+		return false
+	}
+	for _, dir := range strings.Split(path, ";") {
+		if _, err := os.Stat(filepath.Join(dir, "linprocfs.ko")); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // linuxCgroupfsSupported reports whether the kernel provides lincgroupfs
