@@ -384,6 +384,11 @@ func (s *Server) runPodSandbox(ctx context.Context, req *types.RunPodSandboxRequ
 	if jailparam.PodNFSDAllowed(hostNetwork, req.GetConfig().GetLinux().GetSecurityContext().GetPrivileged()) {
 		g.AddAnnotation(jailparam.AllowNFSDAnnotation, "true")
 	}
+	// A privileged pod may create device nodes outside devfs (allow.mknod),
+	// like CAP_MKNOD on Linux; the sandbox jail needs it too.
+	if jailparam.MknodAllowed(req.GetConfig().GetLinux().GetSecurityContext().GetPrivileged()) {
+		g.AddAnnotation(jailparam.AllowMknodAnnotation, "true")
+	}
 	// We want to cleanup after ourselves if we are managing any namespaces and fail in this function.
 	// However, we don't immediately register this func with resourceCleaner because we need to pair the
 	// ns cleanup with networkStop. Otherwise, we could try to cleanup the namespace before the network stop runs,

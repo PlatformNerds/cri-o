@@ -38,3 +38,15 @@ const AllowNFSDAnnotation = "org.freebsd.jail.allow.nfsd"
 func PodNFSDAllowed(hostNetwork, privileged bool) bool {
 	return !hostNetwork && privileged && Supported("allow.nfsd")
 }
+
+// AllowMknodAnnotation asks ocijail to set the allow.mknod jail parameter:
+// the jail may create device nodes outside devfs (freebsd-src patch 0043).
+const AllowMknodAnnotation = "org.freebsd.jail.allow.mknod"
+
+// MknodAllowed reports whether a privileged jail should get allow.mknod, as a
+// privileged Linux container has CAP_MKNOD (e.g. tools that prepare device
+// nodes in a volume). It grants no device access: on FreeBSD a device is
+// reached only through devfs, where a jail can't create nodes.
+func MknodAllowed(privileged bool) bool {
+	return privileged && Supported("allow.mknod")
+}
