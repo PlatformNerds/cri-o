@@ -16,6 +16,7 @@ import (
 	crierrors "k8s.io/cri-api/pkg/errors"
 
 	"github.com/cri-o/cri-o/internal/config/device"
+	"github.com/cri-o/cri-o/internal/devfs"
 	"github.com/cri-o/cri-o/internal/jailparam"
 	ctrfactory "github.com/cri-o/cri-o/internal/factory/container"
 	"github.com/cri-o/cri-o/internal/lib/sandbox"
@@ -78,8 +79,37 @@ func (s *Server) addOCIBindMounts(ctx context.Context, ctr ctrfactory.Container,
 	// Copy all mounts from default mounts, except for
 	// - mounts overridden by supplied mount;
 	// - all mounts under /dev if a supplied /dev is present.
+	// Host paths on the host's devfs become devfs rules or mounts; see
+	// package devfs. Find them first: a hostPath /dev at /dev must not
+	// replace the container's own devfs.
+	devfsMounts := map[*types.Mount]*devfs.Translation{}
+	for _, m := range mounts {
+		if m.HostPath == "" || m.GetImage().GetImage() != "" {
+			continue
+		}
+		src := filepath.Join(s.config.BindMountPrefix, m.HostPath)
+		if resolved, err := resolveSymbolicLink(s.config.BindMountPrefix, src); err == nil {
+			src = resolved
+		}
+		ds, err := devfs.HostSource(src)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("host path %s: %w", m.HostPath, err)
+		}
+		if ds == nil {
+			continue
+		}
+		t, err := devfs.Translate(ds, m.HostPath, m.ContainerPath)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		devfsMounts[m] = t
+	}
+
 	mountSet := make(map[string]struct{})
 	for _, m := range mounts {
+		if _, ok := devfsMounts[m]; ok {
+			continue
+		}
 		mountSet[filepath.Clean(m.ContainerPath)] = struct{}{}
 	}
 	defaultMounts := specgen.Mounts()
@@ -117,6 +147,22 @@ func (s *Server) addOCIBindMounts(ctx context.Context, ctr ctrfactory.Container,
 		}
 		if m.HostPath == "" {
 			return nil, nil, nil, fmt.Errorf("mount.HostPath is empty")
+		}
+		if t, ok := devfsMounts[m]; ok {
+			if err := devfs.AddRules(specgen.Config.Mounts, t.Rules); err != nil {
+				return nil, nil, nil, fmt.Errorf("host path %s: %w", m.HostPath, err)
+			}
+			if t.Mount {
+				specgen.AddMount(devfs.NewMount(dest))
+			}
+			log.Infof(ctx, "Host path %s is on devfs: %d devfs rules, devfs mount: %v", m.HostPath, len(t.Rules), t.Mount)
+			volumes = append(volumes, oci.ContainerVolume{
+				ContainerPath: dest,
+				HostPath:      m.HostPath,
+				Readonly:      m.Readonly,
+				Propagation:   m.Propagation,
+			})
+			continue
 		}
 		if m.HostPath == "/" && dest == "/" {
 			log.Warnf(ctx, "Configuration specifies mounting host root to the container root.  This is dangerous (especially with privileged containers) and should be avoided.")

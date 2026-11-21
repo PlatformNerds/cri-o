@@ -13,6 +13,7 @@ import (
 	"github.com/opencontainers/runtime-tools/generate"
 	types "k8s.io/cri-api/pkg/apis/runtime/v1"
 
+	"github.com/cri-o/cri-o/internal/devfs"
 	"github.com/cri-o/cri-o/internal/storage"
 )
 
@@ -170,4 +171,10 @@ func (s *Server) checkImageOS(handler, imageName string, img *storage.ImageResul
 	}
 
 	return nil
+}
+
+// finishDevfsMounts gives the devfs mounts made for hostPath volumes of the
+// host's /dev the options of the container's /dev, now that they are final.
+func finishDevfsMounts(specgen *generate.Generator) {
+	devfs.SyncMounts(specgen.Config.Mounts)
 }

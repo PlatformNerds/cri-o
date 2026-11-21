@@ -20,3 +20,5 @@ func imageOSFallbacks() []string { return nil }
 
 // checkImageOS: there is no per-handler image OS on this platform.
 func (s *Server) checkImageOS(_, _ string, _ *storage.ImageResult) error { return nil }
+
+func finishDevfsMounts(_ *generate.Generator) {}
