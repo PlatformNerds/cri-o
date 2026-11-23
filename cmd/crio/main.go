@@ -123,6 +123,32 @@ or does not point to a mount namespace bindmount, CRI-O will run in its
 parent's mount namespace and log a warning that the requested namespace
 was not joined.`
 
+func openLogFile(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0o666)
+}
+
+// reopenLogOnHup reopens the --log file on SIGHUP, so that newsyslog(8) or
+// logrotate can rotate it (SIGHUP also reloads the configuration).
+func reopenLogOnHup(path string, f *os.File) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, signals.Hup)
+
+	go func() {
+		for range ch {
+			nf, err := openLogFile(path)
+			if err != nil {
+				logrus.Errorf("Unable to reopen log file %s: %v", path, err)
+
+				continue
+			}
+
+			logrus.SetOutput(nf)
+			f.Close()
+			f = nf
+		}
+	}()
+}
+
 func main() {
 	log.InitKlogShim()
 
@@ -208,12 +234,13 @@ func main() {
 		logrus.AddHook(filterHook)
 
 		if path := c.String("log"); path != "" {
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0o666)
+			f, err := openLogFile(path)
 			if err != nil {
 				return err
 			}
 
 			logrus.SetOutput(f)
+			reopenLogOnHup(path, f)
 		}
 
 		switch c.String("log-format") {
