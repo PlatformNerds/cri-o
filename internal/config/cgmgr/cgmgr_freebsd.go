@@ -114,9 +114,12 @@ func (*NullCgroupManager) ContainerCgroupStats(sbParent, containerID string) (*s
 		return nil, fmt.Errorf("unable to read accounting for %s: %w", containerID, err)
 	}
 
-	if val, ok := entries["cputime"]; ok {
-		// Cumulative CPU time, in seconds. XXX add 1 to make
-		// metrics-server happy - it treats zero cpu usage as a failure
+	// Cumulative CPU time: cputime_us (microseconds) where the kernel
+	// reports it, else cputime (whole seconds). XXX add 1 to make
+	// metrics-server happy - it treats zero cpu usage as a failure
+	if val, ok := entries["cputime_us"]; ok {
+		res.CpuStats.CpuUsage.TotalUsage = val*1000 + 1
+	} else if val, ok := entries["cputime"]; ok {
 		res.CpuStats.CpuUsage.TotalUsage = val*1000000000 + 1
 	}
 	if val, ok := entries["memoryuse"]; ok {

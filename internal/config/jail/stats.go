@@ -74,9 +74,14 @@ func getRacct(filter string) (map[string]uint64, error) {
 
 func racctToCPUStats(entries map[string]uint64) *cgmgr.CPUStats {
 	cpu := &cgmgr.CPUStats{}
-	if val, ok := entries["cputime"]; ok {
-		// Cumulative CPU time, in seconds. XXX add 1 to make
-		// metrics-server happy - it treats zero cpu usage as a failure
+	// Cumulative CPU time: cputime_us (microseconds) where the kernel
+	// reports it (BSDKubernetes freebsd-src 0046), else cputime (whole
+	// seconds, which a rate over metrics-server's 15 s window turns into
+	// steps of 67 millicores). XXX add 1 to make metrics-server happy - it
+	// treats zero cpu usage as a failure
+	if val, ok := entries["cputime_us"]; ok {
+		cpu.TotalUsageNano = val*1000 + 1
+	} else if val, ok := entries["cputime"]; ok {
 		cpu.TotalUsageNano = val*1000000000 + 1
 	}
 	return cpu
